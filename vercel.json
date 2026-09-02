@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "name": "bountyscope-dashboard",
+  "cleanUrls": true,
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/dashboard/$1"
+    }
+  ]
+}

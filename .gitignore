@@ -1,0 +1,10 @@
+/target/
+data/
+logs/
+reports/
+bin/*.exe
+.env
+# Keep .env.example tracked in git
+!.env.example
+
+

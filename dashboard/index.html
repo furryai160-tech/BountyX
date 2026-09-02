@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BountyScope 🛡️ | مركز القيادة والأتمتة الأمنية</title>
+  <meta name="description" content="لوحة تحكم مركز العمليات الأمنية (SOC) لمحرك BountyScope لأتمتة فحص الثغرات بـ 19 أداة أمنية">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
+</head>
+<body class="dark-theme">
+  <div class="app-layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">
+          <span class="shield-pulse">🛡️</span>
+        </div>
+        <div class="brand-text">
+          <h2>BountyScope</h2>
+          <span class="brand-badge">v2.0 ELITE SOC</span>
+        </div>
+      </div>
+
+      <div class="connection-status-pill" id="connStatusPill" onclick="openSettingsModal()">
+        <span class="status-dot online"></span>
+        <span id="connStatusText">متصل بـ Railway</span>
+        <button class="icon-btn-mini" title="إعدادات الرابط">⚙️</button>
+      </div>
+
+      <nav class="nav-menu">
+        <button class="nav-item active" data-tab="overview">
+          <span class="nav-icon">📊</span>
+          <span class="nav-label">نظرة عامة والتحكم</span>
+        </button>
+        <button class="nav-item" data-tab="findings">
+          <span class="nav-icon">🚨</span>
+          <span class="nav-label">مركز الثغرات</span>
+          <span class="nav-badge" id="findingsNavCount">0</span>
+        </button>
+        <button class="nav-item" data-tab="scope">
+          <span class="nav-icon">🎯</span>
+          <span class="nav-label">رادار النطاقات (Scope)</span>
+          <span class="nav-badge muted" id="scopeNavCount">0</span>
+        </button>
+        <button class="nav-item" data-tab="programs">
+          <span class="nav-icon">📁</span>
+          <span class="nav-label">برامج HackerOne</span>
+          <span class="nav-badge muted" id="programsNavCount">0</span>
+        </button>
+        <button class="nav-item" data-tab="queue">
+          <span class="nav-icon">⏳</span>
+          <span class="nav-label">طابور الفحص والعمال</span>
+          <span class="nav-badge info" id="queueNavCount">0</span>
+        </button>
+        <button class="nav-item" data-tab="reports">
+          <span class="nav-icon">📄</span>
+          <span class="nav-label">تقارير الثغرات</span>
+        </button>
+        <button class="nav-item" data-tab="health">
+          <span class="nav-icon">🩺</span>
+          <span class="nav-label">صحة الأدوات الـ 19</span>
+          <span class="nav-badge success" id="toolsNavHealth">19/19</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="server-endpoint-info">
+          <span class="label">سيرفر المحرك:</span>
+          <span class="endpoint-url" id="displayBackendUrl">جاري الكشف...</span>
+        </div>
+        <div class="control-actions">
+          <button class="btn-action pause-btn" id="btnPauseResume" onclick="togglePausePipeline()">
+            <span id="pauseBtnIcon">⏸️</span>
+            <span id="pauseBtnText">إيقاف مؤقت</span>
+          </button>
+          <button class="btn-action launch-btn" onclick="openQuickScanModal()">
+            <span>🚀</span>
+            <span>فحص هدف</span>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Top Header Bar -->
+      <header class="top-bar">
+        <div class="header-title">
+          <h1 id="pageTitle">مركز العمليات الأمنية (Command Center)</h1>
+          <p class="subtitle" id="pageSubtitle">متابعة الفحص الحي لـ 19 أداة أمنية متزامنة مع HackerOne</p>
+        </div>
+
+        <div class="header-actions">
+          <div class="live-clock">
+            <span class="clock-icon">🕒</span>
+            <span id="liveClock">--:--:--</span>
+          </div>
+          <button class="btn-secondary" onclick="manualRefreshData()" id="refreshBtn">
+            <span class="refresh-icon">🔄</span>
+            <span>تحديث حي</span>
+          </button>
+          <button class="btn-primary" onclick="openQuickScanModal()">
+            <span>⚡ فحص صاعق جديد</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- TAB 1: OVERVIEW -->
+      <section class="tab-pane active" id="tab-overview">
+        <!-- Stat Metric Cards -->
+        <div class="metrics-grid">
+          <div class="metric-card critical">
+            <div class="metric-header">
+              <span class="metric-title">ثغرات حرجة (P1)</span>
+              <span class="metric-icon">🚨</span>
+            </div>
+            <div class="metric-value" id="statCriticalFindings">0</div>
+            <div class="metric-sub">تتطلب إبلاغ فوري</div>
+          </div>
+
+          <div class="metric-card high">
+            <div class="metric-header">
+              <span class="metric-title">ثغرات عالية (P2)</span>
+              <span class="metric-icon">🟠</span>
+            </div>
+            <div class="metric-value" id="statHighFindings">0</div>
+            <div class="metric-sub">عالية الخطورة والأثر</div>
+          </div>
+
+          <div class="metric-card medium">
+            <div class="metric-header">
+              <span class="metric-title">ثغرات متوسطة (P3)</span>
+              <span class="metric-icon">🟡</span>
+            </div>
+            <div class="metric-value" id="statMediumFindings">0</div>
+            <div class="metric-sub">نتائج مؤكدة ومحققة</div>
+          </div>
+
+          <div class="metric-card targets">
+            <div class="metric-header">
+              <span class="metric-title">الأصول المصرح بها</span>
+              <span class="metric-icon">🎯</span>
+            </div>
+            <div class="metric-value" id="statInScopeAssets">0</div>
+            <div class="metric-sub" id="statSubdomainsText">0 نطاق فرعي نشط</div>
+          </div>
+
+          <div class="metric-card workers">
+            <div class="metric-header">
+              <span class="metric-title">عمال الفحص النشطين</span>
+              <span class="metric-icon">⚡</span>
+            </div>
+            <div class="metric-value" id="statActiveWorkers">10</div>
+            <div class="metric-sub" id="statWorkerStatus">حالة الخط: يعمل بنشاط 🟢</div>
+          </div>
+
+          <div class="metric-card programs">
+            <div class="metric-header">
+              <span class="metric-title">برامج متتبعة</span>
+              <span class="metric-icon">📁</span>
+            </div>
+            <div class="metric-value" id="statTotalPrograms">0</div>
+            <div class="metric-sub">HackerOne Sync Active</div>
+          </div>
+        </div>
+
+        <!-- Two Column Overview Grid -->
+        <div class="grid-2-col">
+          <!-- Active Jobs & Queue Card -->
+          <div class="panel-card">
+            <div class="panel-header">
+              <div class="panel-title">
+                <span>⚡</span>
+                <h3>طابور الفحص الجاري (Live Scan Queue)</h3>
+              </div>
+              <button class="link-btn" onclick="switchTab('queue')">عرض الكل &larr;</button>
+            </div>
+            <div class="panel-body table-responsive">
+              <table class="data-table" id="overviewQueueTable">
+                <thead>
+                  <tr>
+                    <th>الهدف</th>
+                    <th>البرنامج</th>
+                    <th>الحالة</th>
+                    <th>المحاولات</th>
+                    <th>الوقت</th>
+                  </tr>
+                </thead>
+                <tbody id="overviewQueueBody">
+                  <tr><td colspan="5" class="loading-cell">جاري تحميل الطابور...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Recent Findings Card -->
+          <div class="panel-card">
+            <div class="panel-header">
+              <div class="panel-title">
+                <span>🚨</span>
+                <h3>أحدث الثغرات المكتشفة (Latest Findings)</h3>
+              </div>
+              <button class="link-btn" onclick="switchTab('findings')">عرض الكل &larr;</button>
+            </div>
+            <div class="panel-body table-responsive">
+              <table class="data-table" id="overviewFindingsTable">
+                <thead>
+                  <tr>
+                    <th>الخطورة</th>
+                    <th>نوع الثغرة</th>
+                    <th>الهدف المصاب</th>
+                    <th>التاريخ</th>
+                    <th>الإجراء</th>
+                  </tr>
+                </thead>
+                <tbody id="overviewFindingsBody">
+                  <tr><td colspan="5" class="loading-cell">جاري تحميل الثغرات...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Arsenal Tools Status Grid -->
+        <div class="panel-card mt-4">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span>🛠️</span>
+              <h3>ترسانة الـ 19 أداة أمنية ومحركات الفحص الأصلية (Rust Engines)</h3>
+            </div>
+            <span class="tag-badge green">جميع الأدوات تعمل [OK]</span>
+          </div>
+          <div class="tools-mini-grid" id="toolsMiniGrid">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: FINDINGS -->
+      <section class="tab-pane" id="tab-findings">
+        <div class="panel-card">
+          <div class="panel-header flex-between">
+            <div class="panel-title">
+              <span>🚨</span>
+              <h3>قائمة الثغرات المكتشفة والأدلة (Proof of Concept)</h3>
+            </div>
+            <div class="filter-group">
+              <select id="findingsSeverityFilter" onchange="filterFindings()">
+                <option value="all">كل درجات الخطورة</option>
+                <option value="critical">حرج (Critical)</option>
+                <option value="high">عالي (High)</option>
+                <option value="medium">متوسط (Medium)</option>
+                <option value="low">منخفض (Low)</option>
+              </select>
+              <input type="text" id="findingsSearchInput" placeholder="بحث في الثغرات أو النطاقات..." oninput="filterFindings()">
+            </div>
+          </div>
+          <div class="panel-body table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>الخطورة</th>
+                  <th>نوع الثغرة / القالب</th>
+                  <th>البرنامج</th>
+                  <th>الهدف المصاب (Target)</th>
+                  <th>الرابط الكامل</th>
+                  <th>تاريخ الاكتشاف</th>
+                  <th>تفاصيل ودليل الثغرة</th>
+                </tr>
+              </thead>
+              <tbody id="allFindingsTableBody">
+                <tr><td colspan="7" class="loading-cell">جاري تحميل الثغرات...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: SCOPE & ASSETS -->
+      <section class="tab-pane" id="tab-scope">
+        <div class="panel-card">
+          <div class="panel-header flex-between">
+            <div class="panel-title">
+              <span>🎯</span>
+              <h3>الأصول المصرح بها (In-Scope HackerOne Targets)</h3>
+            </div>
+            <div class="filter-group">
+              <input type="text" id="scopeSearchInput" placeholder="بحث في النطاقات أو البرامج..." oninput="filterScope()">
+              <button class="btn-primary-sm" onclick="scanAllFilteredScope()">🚀 فحص جماعي للمطابق</button>
+            </div>
+          </div>
+          <div class="panel-body table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>النطاق / الأصل</th>
+                  <th>البرنامج</th>
+                  <th>النوع</th>
+                  <th>مكافأة؟</th>
+                  <th>النطاق المصرح</th>
+                  <th>إجراء الفحص</th>
+                </tr>
+              </thead>
+              <tbody id="scopeTableBody">
+                <tr><td colspan="6" class="loading-cell">جاري تحميل الأصول المصرح بها...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: PROGRAMS -->
+      <section class="tab-pane" id="tab-programs">
+        <div class="panel-card">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span>📁</span>
+              <h3>برامج HackerOne المتتبعة (Tracked Programs)</h3>
+            </div>
+          </div>
+          <div class="panel-body table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>اسم البرنامج</th>
+                  <th>المعرف (Handle)</th>
+                  <th>المكافآت (Bounty)</th>
+                  <th>الحالة</th>
+                  <th>رابط البرنامج</th>
+                  <th>إجراء فحص البرنامج</th>
+                </tr>
+              </thead>
+              <tbody id="programsTableBody">
+                <tr><td colspan="6" class="loading-cell">جاري تحميل البرامج...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 5: QUEUE & WORKERS -->
+      <section class="tab-pane" id="tab-queue">
+        <div class="panel-card">
+          <div class="panel-header flex-between">
+            <div class="panel-title">
+              <span>⏳</span>
+              <h3>طابور الفحص والمهام الجارية (Recon Queue)</h3>
+            </div>
+            <button class="btn-secondary-sm" onclick="loadQueue()">🔄 تحديث الطابور</button>
+          </div>
+          <div class="panel-body table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>معرف المهمة</th>
+                  <th>الهدف</th>
+                  <th>البرنامج</th>
+                  <th>الحالة</th>
+                  <th>المحاولات</th>
+                  <th>رسالة الخطأ (إن وجدت)</th>
+                  <th>تاريخ الإنشاء</th>
+                </tr>
+              </thead>
+              <tbody id="fullQueueTableBody">
+                <tr><td colspan="7" class="loading-cell">جاري تحميل الطابور...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 6: REPORTS -->
+      <section class="tab-pane" id="tab-reports">
+        <div class="panel-card">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span>📄</span>
+              <h3>تقارير الثغرات الجاهزة للتقديم (HackerOne Markdown Reports)</h3>
+            </div>
+          </div>
+          <div class="panel-body table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>عنوان التقرير</th>
+                  <th>مسار الملف</th>
+                  <th>التحقق البشري</th>
+                  <th>تاريخ التقرير</th>
+                  <th>عرض التقرير</th>
+                </tr>
+              </thead>
+              <tbody id="reportsTableBody">
+                <tr><td colspan="5" class="loading-cell">جاري تحميل التقارير...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 7: HEALTH -->
+      <section class="tab-pane" id="tab-health">
+        <div class="panel-card">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span>🩺</span>
+              <h3>فحص صحة الأدوات والموارد (System & Tools Health)</h3>
+            </div>
+            <button class="btn-secondary-sm" onclick="loadHealth()">🔄 إعادة تشغيل الفحص</button>
+          </div>
+          <div class="panel-body table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>الفئة</th>
+                  <th>اسم الأداة / الخدمة</th>
+                  <th>الحالة</th>
+                  <th>المسار / الإصدار</th>
+                  <th>التفاصيل والملاحظات</th>
+                </tr>
+              </thead>
+              <tbody id="healthTableBody">
+                <tr><td colspan="5" class="loading-cell">جاري فحص الأدوات...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- MODAL: EVIDENCE / POC DETAILS -->
+  <div class="modal-backdrop" id="evidenceModal">
+    <div class="modal-box modal-lg">
+      <div class="modal-header">
+        <h3 id="evidenceModalTitle">تفاصيل ودليل الثغرة (Proof of Concept)</h3>
+        <button class="modal-close" onclick="closeEvidenceModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="evidenceModalBody">
+        <!-- Dynamically filled -->
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeEvidenceModal()">إغلاق</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: QUICK SCAN LAUNCHER -->
+  <div class="modal-backdrop" id="scanModal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>🚀 إطلاق فحص شامل لهدف جديد</h3>
+        <button class="modal-close" onclick="closeScanModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>الهدف (اسم الدومين أو الرابط):</label>
+          <input type="text" id="scanTargetInput" placeholder="مثال: api.target.com أو example.com">
+        </div>
+        <div class="form-group">
+          <label>اسم البرنامج (اختياري):</label>
+          <input type="text" id="scanProgramInput" placeholder="مثال: shopify أو manual" value="manual">
+        </div>
+        <p class="form-hint">سيتم تشغيل خط الأتمتة الكامل (الـ 19 أداة: Subfinder, Naabu, HTTPX, Katana, Nuclei, Dalfox, SQLMap...) بالتوازي مع إرسال إشعار فوري للتلجرام.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeScanModal()">إلغاء</button>
+        <button class="btn-primary" onclick="submitQuickScan()">بدء الفحص الآن 🔥</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: SERVER SETTINGS -->
+  <div class="modal-backdrop" id="settingsModal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>⚙️ إعدادات ربط السيرفر (Railway Backend URL)</h3>
+        <button class="modal-close" onclick="closeSettingsModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>رابط سيرفر Railway (Backend URL):</label>
+          <input type="text" id="settingsBackendUrl" placeholder="https://bkhi-production.up.railway.app">
+          <p class="form-hint">اكتب رابط سيرفرك على Railway بدون الشرطة المائلة الأخيرة (/)، أو اتركه فارغاً إذا كان يعمل محلياً.</p>
+        </div>
+        <div class="test-conn-result" id="testConnResult"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="testBackendConnection()">اختبار الاتصال ⚡</button>
+        <button class="btn-primary" onclick="saveSettings()">حفظ والاتصال ✅</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

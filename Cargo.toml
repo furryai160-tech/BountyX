@@ -1,0 +1,63 @@
+[package]
+name = "bountyscope"
+version = "0.1.0"
+edition = "2021"
+authors = ["BountyScope Core Team"]
+description = "Headless Bug Bounty Automation Engine in Rust"
+readme = "README.md"
+
+[dependencies]
+# Async Runtime & Concurrency
+tokio = { version = "1.39", features = ["full"] }
+tokio-util = "0.7"
+async-trait = "0.1.81"
+futures = "0.3.30"
+
+# Networking & HTTP
+reqwest = { version = "0.12.5", default-features = false, features = ["json", "rustls-tls", "multipart"] }
+url = { version = "2.5.2", features = ["serde"] }
+axum = "0.7"
+tower-http = { version = "0.5", features = ["cors"] }
+
+
+# Serialization & Models
+serde = { version = "1.0.204", features = ["derive"] }
+serde_json = "1.0.120"
+
+# Database (SQLite with SQLx)
+sqlx = { version = "0.8.0", default-features = false, features = [
+    "runtime-tokio",
+    "sqlite",
+    "chrono",
+    "uuid",
+    "migrate",
+    "macros"
+] }
+
+# CLI & Configuration
+clap = { version = "4.5.9", features = ["derive", "env"] }
+dotenvy = "0.15.7"
+
+# Logging & Observability
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter", "fmt", "json", "time"] }
+
+# Error Handling
+anyhow = "1.0.86"
+thiserror = "1.0.63"
+
+# Utilities & Security
+chrono = { version = "0.4.38", features = ["serde"] }
+uuid = { version = "1.9.1", features = ["v4", "serde"] }
+sha2 = "0.10.8"
+regex = "1.10.5"
+glob = "0.3.1"
+ipnet = "2.9.0"
+sysinfo = "0.30"
+urlencoding = "2.1"
+
+
+
+[dev-dependencies]
+tempfile = "3.10.1"
+tokio-test = "0.4.4"
