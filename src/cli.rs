@@ -54,7 +54,15 @@ pub enum Commands {
         output: Option<String>,
     },
 
+    /// Run an end-to-end autonomous security assessment against an isolated local test lab
+    Lab {
+        /// Optional port for the local lab simulation server
+        #[arg(short, long, default_value_t = 8888)]
+        port: u16,
+    },
+
     /// List and inspect recorded security findings
+
     Findings {
         /// Optional status filter (NEW, POTENTIAL, REQUIRES_REVIEW, CONFIRMED_BY_USER, REJECTED)
         #[arg(short, long)]

@@ -493,6 +493,103 @@ async fn main() -> Result<()> {
             println!();
         }
 
+        Commands::Lab { port } => {
+            println!("\n🧪 Initializing Isolated Security Testing Lab on 127.0.0.1:{}...", port);
+
+            // 1. Build local test application routes
+            let app = axum::Router::new()
+                .route("/api/v1/orders", axum::routing::get(|_headers: axum::http::HeaderMap| async move {
+                    // Intentionally vulnerable BOLA endpoint
+                    axum::Json(serde_json::json!({
+                        "id": 101,
+                        "customer": "Apex Financial Corp",
+                        "email": "cfo@apexfinancial.internal",
+                        "billing_records": [
+                            {"invoice_id": "INV-9942", "amount": 45000.0, "status": "PAID"},
+                            {"invoice_id": "INV-9943", "amount": 12800.0, "status": "PENDING"}
+                        ],
+                        "tenant_token": "live_sec_token_984391823"
+                    }))
+                }))
+                .route("/api/v1/user/profile", axum::routing::get(|headers: axum::http::HeaderMap| async move {
+                    // Intentionally vulnerable CORS origin reflection endpoint
+                    let mut resp_headers = axum::http::HeaderMap::new();
+                    if let Some(origin) = headers.get("origin") {
+                        resp_headers.insert("access-control-allow-origin", origin.clone());
+                        resp_headers.insert("access-control-allow-credentials", "true".parse().unwrap());
+                    }
+                    (resp_headers, axum::Json(serde_json::json!({ "user": "alice_admin", "role": "FinanceManager" })))
+                }))
+                .route("/admin/telemetry", axum::routing::get(|| async move {
+                    // Exposed sensitive internal administrative metrics endpoint without auth
+                    axum::Json(serde_json::json!({
+                        "system": "Production Telemetry",
+                        "database_cluster": "db-cluster-primary.internal",
+                        "debug_mode": true,
+                        "active_sessions": 412
+                    }))
+                }))
+                .route("/api/v1/public/ping", axum::routing::get(|| async move {
+                    // Secure public endpoint (0% False Positives)
+                    axum::Json(serde_json::json!({ "status": "healthy", "service": "api-gateway" }))
+                }));
+
+            let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
+            println!("   [ONLINE] Simulation Web Application running at http://127.0.0.1:{}", port);
+            println!("   - Route 1: /api/v1/orders?id=101 (BOLA/IDOR flaw)");
+            println!("   - Route 2: /api/v1/user/profile (Permissive CORS flaw)");
+            println!("   - Route 3: /admin/telemetry (Privileged Route exposure)");
+            println!("   - Route 4: /api/v1/public/ping (Benign Safe Endpoint)");
+
+            tokio::spawn(async move {
+                axum::serve(listener, app).await.unwrap();
+            });
+
+            // Allow listener to initialize
+            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+
+            // 2. Set up ScopePolicy strictly for 127.0.0.1
+            let base_url = format!("http://127.0.0.1:{}", port);
+            let mut policy = scope::policy::ScopePolicy::new_permissive("127.0.0.1");
+            policy.allowed_domains = vec!["127.0.0.1".to_string(), "localhost".to_string()];
+            policy.max_requests = 100;
+            policy.rate_limit_rps = 20;
+
+            let guard = scope::guard::ScopeGuard::new(policy);
+            let kill_switch = sandbox::kill_switch::KillSwitch::new();
+            let http_client = sandbox::client::SandboxedHttpClient::new(guard, kill_switch)?;
+
+            let mut agent = ai::agent::AutonomousSecurityAgent::new(http_client);
+
+            let discovered_endpoints = vec![
+                format!("{}/api/v1/orders?id=101", base_url),
+                format!("{}/api/v1/user/profile", base_url),
+                format!("{}/admin/telemetry", base_url),
+                format!("{}/api/v1/public/ping", base_url),
+            ];
+
+            println!("\n🤖 Launching Autonomous AI Security Research Agent against Lab...");
+            let findings = agent.run_assessment("127.0.0.1", &base_url, &discovered_endpoints).await?;
+            let report = reporting::generator::BugBountyReport::new("127.0.0.1", findings);
+
+            let report_path = "reports/lab-v3-assessment.md";
+            tokio::fs::create_dir_all("reports").await.ok();
+            tokio::fs::write(&report_path, report.to_markdown()).await?;
+
+            println!("\n🎯 Lab Assessment Complete! Generated Report: {}", report_path);
+            println!("   Total Verified Findings Confirmed: {}", report.findings.len());
+            println!("{:-<80}", "");
+            println!("{:<6} {:<10} {:<30} {:<12}", "#", "Severity", "Finding Title", "Confidence");
+            println!("{:-<80}", "");
+            for (i, f) in report.findings.iter().enumerate() {
+                println!("{:<6} {:<10} {:<30} {}%", i + 1, f.risk.severity, f.title, f.risk.confidence_score);
+            }
+            println!("{:-<80}", "");
+            println!("   Human Review Status: ⚠️ PENDING HUMAN REVIEW (External submission blocked)");
+            println!("   To approve report: bountyx reports --id {} --approve \"Your Name\"\n", report.id);
+        }
+
+
         Commands::Findings { status } => {
             let (_pool, repo) = init_db(&config.database_url).await?;
             let findings = repo.list_findings(status.as_deref()).await?;
