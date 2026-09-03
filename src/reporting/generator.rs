@@ -1,3 +1,4 @@
+use crate::reporting::ai_writer::{EvidencePackage, SmartReportWriter};
 use crate::security::validator::VerifiedFinding;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -43,60 +44,14 @@ impl BugBountyReport {
         serde_json::to_string_pretty(self).unwrap_or_default()
     }
 
+    /// Synthesize executive-grade report using AI Smart Report Writer with deterministic CVSS & Anti-Hallucination Gate
     pub fn to_markdown(&self) -> String {
-        let mut md = String::new();
-
-        md.push_str(&format!("# {}\n\n", self.title));
-        md.push_str(&format!("- **Target Asset:** `{}`\n", self.target_domain));
-        md.push_str(&format!("- **Generated At:** `{}`\n", self.generated_at.to_rfc3339()));
-        md.push_str(&format!(
-            "- **Human Review Status:** {}\n\n",
-            if self.is_approved_by_human {
-                format!("✅ APPROVED by `{}` on `{}`", self.approved_by.as_deref().unwrap_or("Unknown"), self.approval_timestamp.map(|t| t.to_rfc3339()).unwrap_or_default())
-            } else {
-                "⚠️ PENDING HUMAN REVIEW (External submission blocked)".to_string()
-            }
-        ));
-
-        md.push_str("## 📊 Executive Findings Summary\n\n");
-        md.push_str("| Finding ID | Severity | Confidence | Category | Title |\n");
-        md.push_str("|---|---|---|---|---|\n");
-
-        for f in &self.findings {
-            md.push_str(&format!(
-                "| `{}` | **{}** | {}% | {} | {} |\n",
-                f.id, f.risk.severity, f.risk.confidence_score, f.category, f.title
-            ));
-        }
-        md.push_str("\n---\n\n");
-
-        for (idx, f) in self.findings.iter().enumerate() {
-            md.push_str(&format!("### {}. {}\n\n", idx + 1, f.title));
-            md.push_str(&format!("- **Finding ID:** `{}`\n", f.id));
-            md.push_str(&format!("- **Severity:** **{}** (CVSS: {:.1})\n", f.risk.severity, f.risk.cvss_score));
-            md.push_str(&format!("- **Confidence Score:** {}%\n", f.risk.confidence_score));
-            md.push_str(&format!("- **Vulnerable Endpoint:** `{}`\n\n", f.target_url));
-
-            md.push_str("#### 📝 Description & Risk Reasoning\n");
-            md.push_str(&format!("{}\n\n", f.risk.reasoning));
-
-            md.push_str("#### 🔁 Step-by-Step Reproduction Proof of Concept\n");
-            md.push_str("Execute the following verified cURL command against the authorized target:\n");
-            md.push_str(&format!("```bash\n{}\n```\n\n", f.evidence.reproduction_curl));
-
-            md.push_str("#### 🔬 Observed Response Evidence\n");
-            md.push_str(&format!("- **HTTP Status:** `{}`\n", f.evidence.response_status));
-            md.push_str(&format!("- **Differential Notes:** {}\n", f.evidence.differential_notes));
-            md.push_str("```json\n");
-            md.push_str(&f.evidence.response_snippet);
-            md.push_str("\n```\n\n");
-
-            md.push_str("#### 💡 Remediation Guidance\n");
-            md.push_str(&format!("{}\n\n", f.remediation));
-            md.push_str("---\n\n");
-        }
-
-        md.push_str("\n*Generated autonomously by BountyX V3 AI Security Research Platform with Human-in-the-Loop verification.*\n");
-        md
+        let packages: Vec<EvidencePackage> = self.findings.iter().map(EvidencePackage::from).collect();
+        let mut draft = SmartReportWriter::generate_report(&self.target_domain, &packages);
+        draft.id = self.id.clone();
+        draft.is_approved_by_human = self.is_approved_by_human;
+        draft.approved_by = self.approved_by.clone();
+        draft.approval_timestamp = self.approval_timestamp;
+        draft.to_markdown()
     }
 }
