@@ -449,7 +449,28 @@ async fn main() -> Result<()> {
         }
 
         Commands::Assess { target, scope, output } => {
-            println!("\n🤖 Starting BountyX V3 Autonomous AI Security Assessment on: {}", target);
+            let (_pool, repo) = init_db(&config.database_url).await?;
+
+            let (chosen_program, chosen_target) = if let Some(t) = target {
+                ("manual".to_string(), t)
+            } else {
+                println!("\n🔍 Auto-Selecting Next In-Scope Target from HackerOne Assets Database (42,000+ Assets)...");
+                match repo.get_next_unscanned_in_scope_target().await? {
+                    Some((prog, ident)) => {
+                        println!("   🎯 Claimed Target: {} (HackerOne Program: {})", ident, prog);
+                        (prog, ident)
+                    }
+                    None => {
+                        println!("   ⚠️ No unscanned targets found in database. Using default authorized target.");
+                        ("security".to_string(), "ctf.hacker101.com".to_string())
+                    }
+                }
+            };
+
+            let target = chosen_target;
+            repo.update_asset_last_scanned(&target).await.ok();
+
+            println!("\n🤖 Starting BountyX V3 Autonomous AI Security Assessment on: {} [{}]", target, chosen_program);
 
             let policy = if let Some(ref path) = scope {
                 let content = tokio::fs::read_to_string(path).await?;
@@ -469,6 +490,7 @@ async fn main() -> Result<()> {
             } else {
                 format!("https://{}", target)
             };
+
 
             let discovered_endpoints = vec![
                 format!("{}/", base_url),

@@ -196,6 +196,31 @@ impl Repository {
         Ok(())
     }
 
+    pub async fn get_next_unscanned_in_scope_target(&self) -> Result<Option<(String, String)>> {
+        let row = sqlx::query(
+            r#"
+            SELECT p.handle, a.identifier
+            FROM assets a
+            JOIN programs p ON a.program_id = p.id
+            WHERE a.in_scope = 1
+              AND a.asset_type = 'URL'
+              AND a.identifier NOT LIKE '*%'
+              AND a.identifier NOT LIKE 'https://*%'
+            ORDER BY 
+              CASE WHEN a.last_scanned IS NULL THEN 0 ELSE 1 END ASC,
+              a.eligible_for_bounty DESC,
+              a.last_scanned ASC,
+              a.first_seen ASC
+            LIMIT 1
+            "#
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|r| (r.get("handle"), r.get("identifier"))))
+    }
+
+
     // -------------------------------------------------------------------------
     // Scope Snapshots
     // -------------------------------------------------------------------------

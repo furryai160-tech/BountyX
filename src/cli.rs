@@ -44,8 +44,8 @@ pub enum Commands {
 
     /// Execute Autonomous AI Security Research Assessment (Hypothesis -> Test -> Validate)
     Assess {
-        /// Target domain or root URL
-        target: String,
+        /// Target domain or root URL (if omitted, automatically claims the next in-scope target from HackerOne)
+        target: Option<String>,
         /// Optional path to YAML or JSON scope policy file
         #[arg(short, long)]
         scope: Option<String>,
@@ -53,6 +53,7 @@ pub enum Commands {
         #[arg(short, long)]
         output: Option<String>,
     },
+
 
     /// Run an end-to-end autonomous security assessment against an isolated local test lab
     Lab {
