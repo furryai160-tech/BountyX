@@ -209,7 +209,87 @@ impl TelegramNotifier {
         });
 
         let _ = self.send_message_with_inline_keyboard(&msg, inline_keyboard).await;
+
+        // Automatically compile and send professional PDF report
+        let safe_domain = report.target_domain.replace(['/', ':', '.'], "_");
+        let pdf_dir = std::path::Path::new("reports");
+        tokio::fs::create_dir_all(pdf_dir).await.ok();
+        let pdf_path = pdf_dir.join(format!("{}-v3-assessment.pdf", safe_domain));
+
+        if let Ok(_) = crate::reporting::pdf::PdfReportGenerator::generate_pdf(report, &pdf_path).await {
+            let caption = format!("📄 <b>تقرير الفحص الأمني المعتمد (PDF):</b> <code>{}</code>\n🆔 <code>{}</code>", report.target_domain, report.id);
+            let file_name = format!("{}_Security_Report.pdf", safe_domain);
+            let _ = self.send_document(&pdf_path.to_string_lossy(), &file_name, &caption).await;
+        }
     }
+
+    pub async fn send_document(&self, file_path: &str, file_name: &str, caption: &str) -> Result<()> {
+        if !self.enabled {
+            return Ok(());
+        }
+
+        let file_bytes = match tokio::fs::read(file_path).await {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                warn!("Failed to read PDF file for Telegram upload {}: {}", file_path, e);
+                return Ok(());
+            }
+        };
+
+        let mut target_chats = std::collections::HashSet::new();
+        if self.chat_id != 0 {
+            target_chats.insert(self.chat_id);
+        }
+
+        if let Some(ref repo) = self.repository {
+            if let Ok(authorized) = repo.list_authorized_telegram_chats().await {
+                for cid in authorized {
+                    target_chats.insert(cid);
+                }
+            }
+        }
+
+        let url = format!(
+            "https://api.telegram.org/bot{}/sendDocument",
+            self.bot_token
+        );
+
+        for target_chat in target_chats {
+            let part = match reqwest::multipart::Part::bytes(file_bytes.clone())
+                .file_name(file_name.to_string())
+                .mime_str("application/pdf")
+            {
+                Ok(p) => p,
+                Err(e) => {
+                    warn!("Failed to construct multipart PDF: {}", e);
+                    continue;
+                }
+            };
+
+            let form = reqwest::multipart::Form::new()
+                .text("chat_id", target_chat.to_string())
+                .text("caption", caption.to_string())
+                .text("parse_mode", "HTML")
+                .part("document", part);
+
+            match self.client.post(&url).multipart(form).send().await {
+                Ok(resp) => {
+                    if resp.status().is_success() {
+                        debug!("Telegram PDF document sent successfully to chat {}", target_chat);
+                    } else {
+                        let err_body = resp.text().await.unwrap_or_default();
+                        warn!("Telegram sendDocument returned non-success for chat {}: {}", target_chat, err_body);
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to send Telegram PDF document to chat {}: {}", target_chat, e);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
 
     pub async fn notify_startup(&self, programs: usize, assets: usize, workers: usize) {
         let msg = format!(
