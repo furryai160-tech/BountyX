@@ -676,10 +676,15 @@ async fn main() -> Result<()> {
             for (i, f) in report.findings.iter().enumerate() {
                 println!("{:<6} {:<10} {:<30} {}%", i + 1, f.risk.severity, f.title, f.risk.confidence_score);
             }
-            println!("{:-<80}", "");
+            let (_pool, repo) = init_db(&config.database_url).await?;
+            let notifier = TelegramNotifier::new(&config, Some(repo.clone()));
+            notifier.notify_v3_report(&report).await;
+            println!("   📱 Sent Telegram Alert to your phone with [🚀 Submit Report] button!");
+
             println!("   Human Review Status: ⚠️ PENDING HUMAN REVIEW (External submission blocked)");
             println!("   To approve report: bountyx reports --id {} --approve \"Your Name\"\n", report.id);
         }
+
 
 
         Commands::Findings { status } => {
