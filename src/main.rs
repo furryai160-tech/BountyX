@@ -601,6 +601,21 @@ async fn main() -> Result<()> {
         Commands::Lab { port } => {
             println!("\n🧪 Initializing Isolated Security Testing Lab on 127.0.0.1:{}...", port);
 
+            let (_pool, repo) = init_db(&config.database_url).await?;
+
+            // 0. Spawn Telegram Bot Polling Listener in background so inline buttons work!
+            if !config.telegram_bot_token.is_empty() {
+                let bot_config = config.clone();
+                let bot_repo = repo.clone();
+                let is_paused = Arc::new(AtomicBool::new(false));
+                let cancel_token = CancellationToken::new();
+                tokio::spawn(async move {
+                    let bot = TelegramBot::new(bot_config, bot_repo, is_paused, cancel_token);
+                    bot.run_polling_loop().await;
+                });
+            }
+
+
             // 1. Build local test application routes
             let app = axum::Router::new()
                 .route("/api/v1/orders", axum::routing::get(|_headers: axum::http::HeaderMap| async move {
