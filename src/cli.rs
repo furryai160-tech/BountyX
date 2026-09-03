@@ -52,7 +52,11 @@ pub enum Commands {
         /// Output path for generated report
         #[arg(short, long)]
         output: Option<String>,
+        /// Continuously assess in-scope targets in an autonomous loop
+        #[arg(short, long)]
+        continuous: bool,
     },
+
 
 
     /// Run an end-to-end autonomous security assessment against an isolated local test lab

@@ -448,126 +448,135 @@ async fn main() -> Result<()> {
             println!();
         }
 
-        Commands::Assess { target, scope, output } => {
+        Commands::Assess { target, scope, output, continuous } => {
             let (_pool, repo) = init_db(&config.database_url).await?;
 
-            let (chosen_program, chosen_target) = if let Some(t) = target {
-                ("manual".to_string(), t)
-            } else {
-                println!("\n🔍 Auto-Selecting Next In-Scope Target from HackerOne Assets Database (42,000+ Assets)...");
-                match repo.get_next_unscanned_in_scope_target().await? {
-                    Some((prog, ident)) => {
-                        println!("   🎯 Claimed Target: {} (HackerOne Program: {})", ident, prog);
-                        (prog, ident)
+            let mut iteration = 1;
+            loop {
+                let (chosen_program, chosen_target) = if let Some(ref t) = target {
+                    ("manual".to_string(), t.clone())
+                } else {
+                    println!("\n🔍 Auto-Selecting In-Scope Target [Round {}] from HackerOne Assets Database (42,000+ Assets)...", iteration);
+                    match repo.get_next_unscanned_in_scope_target().await? {
+                        Some((prog, ident)) => {
+                            println!("   🎯 Claimed Target: {} (HackerOne Program: {})", ident, prog);
+                            (prog, ident)
+                        }
+                        None => {
+                            println!("   ⚠️ No unscanned targets found in database. Using default authorized target.");
+                            ("security".to_string(), "ctf.hacker101.com".to_string())
+                        }
                     }
-                    None => {
-                        println!("   ⚠️ No unscanned targets found in database. Using default authorized target.");
-                        ("security".to_string(), "ctf.hacker101.com".to_string())
-                    }
-                }
-            };
+                };
 
-            let target = chosen_target;
-            repo.update_asset_last_scanned(&target).await.ok();
+                let cur_target = chosen_target.clone();
+                repo.update_asset_last_scanned(&cur_target).await.ok();
 
-            println!("\n🤖 Starting BountyX V3 Autonomous AI Security Assessment on: {} [{}]", target, chosen_program);
+                println!("\n🤖 Starting BountyX V3 Autonomous AI Security Assessment on: {} [{}]", cur_target, chosen_program);
 
-            let policy = if let Some(ref path) = scope {
-                let content = tokio::fs::read_to_string(path).await?;
-                scope::policy::ScopePolicy::from_yaml_str(&content)?
-            } else {
-                scope::policy::ScopePolicy::new_permissive(&target)
-            };
+                let policy = if let Some(ref path) = scope {
+                    let content = tokio::fs::read_to_string(path).await?;
+                    scope::policy::ScopePolicy::from_yaml_str(&content)?
+                } else {
+                    scope::policy::ScopePolicy::new_permissive(&cur_target)
+                };
 
-            let guard = scope::guard::ScopeGuard::new(policy);
-            let kill_switch = sandbox::kill_switch::KillSwitch::new();
-            let http_client = sandbox::client::SandboxedHttpClient::new(guard, kill_switch)?;
+                let guard = scope::guard::ScopeGuard::new(policy);
+                let kill_switch = sandbox::kill_switch::KillSwitch::new();
+                let http_client = sandbox::client::SandboxedHttpClient::new(guard, kill_switch)?;
 
-            let mut agent = ai::agent::AutonomousSecurityAgent::new(http_client);
+                let mut agent = ai::agent::AutonomousSecurityAgent::new(http_client);
 
-            let base_url = if target.starts_with("http://") || target.starts_with("https://") {
-                target.clone()
-            } else {
-                format!("https://{}", target)
-            };
+                let base_url = if cur_target.starts_with("http://") || cur_target.starts_with("https://") {
+                    cur_target.clone()
+                } else {
+                    format!("https://{}", cur_target)
+                };
 
+                let mut discovered_endpoints = vec![
+                    format!("{}/", base_url),
+                    format!("{}/robots.txt", base_url),
+                    format!("{}/sitemap.xml", base_url),
+                    format!("{}/api", base_url),
+                    format!("{}/api/v1", base_url),
+                ];
 
-            let mut discovered_endpoints = vec![
-                format!("{}/", base_url),
-                format!("{}/robots.txt", base_url),
-                format!("{}/sitemap.xml", base_url),
-                format!("{}/api", base_url),
-                format!("{}/api/v1", base_url),
-            ];
+                // 1. Fast reconnaissance on target: probe robots.txt and homepage to discover real endpoints
+                println!("🔍 Crawling & Discovering Live Endpoints on {}...", cur_target);
+                let raw_client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(5))
+                    .danger_accept_invalid_certs(true)
+                    .build()
+                    .unwrap_or_default();
 
-            // 1. Fast reconnaissance on target: probe robots.txt and homepage to discover real endpoints
-            println!("🔍 Crawling & Discovering Live Endpoints on {}...", target);
-            let raw_client = reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(5))
-                .danger_accept_invalid_certs(true)
-                .build()
-                .unwrap_or_default();
-
-            // Fetch robots.txt
-            if let Ok(resp) = raw_client.get(format!("{}/robots.txt", base_url)).send().await {
-                if resp.status().is_success() {
-                    if let Ok(text) = resp.text().await {
-                        for line in text.lines() {
-                            let trimmed = line.trim();
-                            if trimmed.starts_with("Disallow:") || trimmed.starts_with("Allow:") {
-                                if let Some((_, path)) = trimmed.split_once(':') {
-                                    let clean_p = path.trim();
-                                    if !clean_p.is_empty() && !clean_p.contains('*') {
-                                        discovered_endpoints.push(format!("{}{}", base_url.trim_end_matches('/'), clean_p));
+                // Fetch robots.txt
+                if let Ok(resp) = raw_client.get(format!("{}/robots.txt", base_url)).send().await {
+                    if resp.status().is_success() {
+                        if let Ok(text) = resp.text().await {
+                            for line in text.lines() {
+                                let trimmed = line.trim();
+                                if trimmed.starts_with("Disallow:") || trimmed.starts_with("Allow:") {
+                                    if let Some((_, path)) = trimmed.split_once(':') {
+                                        let clean_p = path.trim();
+                                        if !clean_p.is_empty() && !clean_p.contains('*') {
+                                            discovered_endpoints.push(format!("{}{}", base_url.trim_end_matches('/'), clean_p));
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                 }
-            }
 
-            // Fetch homepage and extract links
-            if let Ok(resp) = raw_client.get(&base_url).send().await {
-                if resp.status().is_success() {
-                    if let Ok(html) = resp.text().await {
-                        if let Ok(re) = regex::Regex::new(r#"(?:href|src|action)=["'](/[^"'#\s?]+)"#) {
-                            for cap in re.captures_iter(&html) {
-                                if let Some(m) = cap.get(1) {
-                                    let path = m.as_str();
-                                    if !path.ends_with(".css") && !path.ends_with(".png") && !path.ends_with(".jpg") && !path.ends_with(".svg") {
-                                        discovered_endpoints.push(format!("{}{}", base_url.trim_end_matches('/'), path));
+                // Fetch homepage and extract links
+                if let Ok(resp) = raw_client.get(&base_url).send().await {
+                    if resp.status().is_success() {
+                        if let Ok(html) = resp.text().await {
+                            if let Ok(re) = regex::Regex::new(r#"(?:href|src|action)=["'](/[^"'#\s?]+)"#) {
+                                for cap in re.captures_iter(&html) {
+                                    if let Some(m) = cap.get(1) {
+                                        let path = m.as_str();
+                                        if !path.ends_with(".css") && !path.ends_with(".png") && !path.ends_with(".jpg") && !path.ends_with(".svg") {
+                                            discovered_endpoints.push(format!("{}{}", base_url.trim_end_matches('/'), path));
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                 }
+
+                // Deduplicate endpoints
+                discovered_endpoints.sort();
+                discovered_endpoints.dedup();
+                discovered_endpoints.truncate(30);
+                println!("   📊 Discovered {} active attack surface endpoints for analysis.", discovered_endpoints.len());
+
+                let findings = agent.run_assessment(&cur_target, &base_url, &discovered_endpoints).await?;
+
+                let report = reporting::generator::BugBountyReport::new(&cur_target, findings);
+
+                let report_path = output.clone().unwrap_or_else(|| {
+                    format!("reports/{}-v3-assessment.md", cur_target.replace(['/', ':', '.'], "_"))
+                });
+
+                tokio::fs::create_dir_all("reports").await.ok();
+                tokio::fs::write(&report_path, report.to_markdown()).await?;
+
+                println!("\n✅ Assessment Complete! Generated Report: {}", report_path);
+                println!("   Total Verified Findings: {}", report.findings.len());
+                println!("   Human Review Status: ⚠️ PENDING HUMAN REVIEW (External submission blocked)");
+                println!("   To approve report for submission, run: bountyx reports --id {} --approve \"Your Name\"\n", report.id);
+
+                if !continuous || target.is_some() {
+                    break;
+                }
+
+                iteration += 1;
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             }
-
-            // Deduplicate endpoints
-            discovered_endpoints.sort();
-            discovered_endpoints.dedup();
-            discovered_endpoints.truncate(30);
-            println!("   📊 Discovered {} active attack surface endpoints for analysis.", discovered_endpoints.len());
-
-            let findings = agent.run_assessment(&target, &base_url, &discovered_endpoints).await?;
-
-            let report = reporting::generator::BugBountyReport::new(&target, findings);
-
-            let report_path = output.unwrap_or_else(|| {
-                format!("reports/{}-v3-assessment.md", target.replace(['/', ':', '.'], "_"))
-            });
-
-            tokio::fs::create_dir_all("reports").await.ok();
-            tokio::fs::write(&report_path, report.to_markdown()).await?;
-
-            println!("\n✅ Assessment Complete! Generated Report: {}", report_path);
-            println!("   Total Verified Findings: {}", report.findings.len());
-            println!("   Human Review Status: ⚠️ PENDING HUMAN REVIEW (External submission blocked)");
-            println!("   To approve report for submission, run: bountyx reports --id {} --approve \"Your Name\"", report.id);
-            println!();
         }
+
 
         Commands::Lab { port } => {
             println!("\n🧪 Initializing Isolated Security Testing Lab on 127.0.0.1:{}...", port);

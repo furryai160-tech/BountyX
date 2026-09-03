@@ -173,14 +173,16 @@ impl SecurityTool for NaabuAdapter {
 
         let args: Vec<String> = vec![
             "-host".to_string(), host.to_string(),
+            "-sC".to_string(),                          // Connect scan (non-root safe)
             "-json".to_string(),
             "-silent".to_string(),
             "-top-ports".to_string(), "1000".to_string(),
-            "-rate".to_string(), "500".to_string(),    // 500 packets/sec — safe
+            "-rate".to_string(), "500".to_string(),     // 500 packets/sec — safe
             "-timeout".to_string(), "1000".to_string(), // 1s per host timeout (ms)
-            "-retries".to_string(), "2".to_string(),
-            "-c".to_string(), "25".to_string(),        // 25 concurrent probes
+            "-retries".to_string(), "1".to_string(),
+            "-c".to_string(), "25".to_string(),         // 25 concurrent probes
         ];
+
 
         let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
 

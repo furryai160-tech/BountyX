@@ -101,8 +101,9 @@ impl PipelineWorker {
 
         let sqlmap = SqlmapAdapter::new(&config.sqlmap_path, config.process_timeout_seconds)
             .with_repository(repository.clone());
-        let naabu = NaabuAdapter::new(&config.naabu_path, 120)
+        let naabu = NaabuAdapter::new(&config.naabu_path, 30)
             .with_repository(repository.clone());
+
         let dnsx = DnsxAdapter::new(&config.dnsx_path, 180)
             .with_repository(repository.clone());
         let crlfuzz = CrlfuzzAdapter::new(&config.crlfuzz_path, 120)
