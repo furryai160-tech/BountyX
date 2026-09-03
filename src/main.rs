@@ -451,7 +451,20 @@ async fn main() -> Result<()> {
         Commands::Assess { target, scope, output, continuous } => {
             let (_pool, repo) = init_db(&config.database_url).await?;
 
+            // 0. Spawn Telegram Bot Polling Listener in background so inline buttons work!
+            if !config.telegram_bot_token.is_empty() {
+                let bot_config = config.clone();
+                let bot_repo = repo.clone();
+                let is_paused = Arc::new(AtomicBool::new(false));
+                let cancel_token = CancellationToken::new();
+                tokio::spawn(async move {
+                    let bot = TelegramBot::new(bot_config, bot_repo, is_paused, cancel_token);
+                    bot.run_polling_loop().await;
+                });
+            }
+
             let mut iteration = 1;
+
             loop {
                 let (chosen_program, chosen_target) = if let Some(ref t) = target {
                     ("manual".to_string(), t.clone())
