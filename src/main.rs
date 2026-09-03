@@ -492,13 +492,67 @@ async fn main() -> Result<()> {
             };
 
 
-            let discovered_endpoints = vec![
+            let mut discovered_endpoints = vec![
                 format!("{}/", base_url),
+                format!("{}/robots.txt", base_url),
+                format!("{}/sitemap.xml", base_url),
                 format!("{}/api", base_url),
                 format!("{}/api/v1", base_url),
             ];
 
+            // 1. Fast reconnaissance on target: probe robots.txt and homepage to discover real endpoints
+            println!("🔍 Crawling & Discovering Live Endpoints on {}...", target);
+            let raw_client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(5))
+                .danger_accept_invalid_certs(true)
+                .build()
+                .unwrap_or_default();
+
+            // Fetch robots.txt
+            if let Ok(resp) = raw_client.get(format!("{}/robots.txt", base_url)).send().await {
+                if resp.status().is_success() {
+                    if let Ok(text) = resp.text().await {
+                        for line in text.lines() {
+                            let trimmed = line.trim();
+                            if trimmed.starts_with("Disallow:") || trimmed.starts_with("Allow:") {
+                                if let Some((_, path)) = trimmed.split_once(':') {
+                                    let clean_p = path.trim();
+                                    if !clean_p.is_empty() && !clean_p.contains('*') {
+                                        discovered_endpoints.push(format!("{}{}", base_url.trim_end_matches('/'), clean_p));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Fetch homepage and extract links
+            if let Ok(resp) = raw_client.get(&base_url).send().await {
+                if resp.status().is_success() {
+                    if let Ok(html) = resp.text().await {
+                        if let Ok(re) = regex::Regex::new(r#"(?:href|src|action)=["'](/[^"'#\s?]+)"#) {
+                            for cap in re.captures_iter(&html) {
+                                if let Some(m) = cap.get(1) {
+                                    let path = m.as_str();
+                                    if !path.ends_with(".css") && !path.ends_with(".png") && !path.ends_with(".jpg") && !path.ends_with(".svg") {
+                                        discovered_endpoints.push(format!("{}{}", base_url.trim_end_matches('/'), path));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Deduplicate endpoints
+            discovered_endpoints.sort();
+            discovered_endpoints.dedup();
+            discovered_endpoints.truncate(30);
+            println!("   📊 Discovered {} active attack surface endpoints for analysis.", discovered_endpoints.len());
+
             let findings = agent.run_assessment(&target, &base_url, &discovered_endpoints).await?;
+
             let report = reporting::generator::BugBountyReport::new(&target, findings);
 
             let report_path = output.unwrap_or_else(|| {

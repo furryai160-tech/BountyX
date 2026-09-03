@@ -71,6 +71,41 @@ impl AgentPlanner {
             }
         }
 
+        // Sensitive Configuration / Source Code Exposure Probes
+        let sensitive_probes = [
+            ("/.git/HEAD", "Exposed Git Repository", "Potential leakage of source code and commits history via public .git folder."),
+            ("/.env", "Exposed Environment Configuration", "Potential leakage of database credentials and API secrets in web root."),
+            ("/swagger.json", "Exposed Swagger/OpenAPI Documentation", "Publicly accessible API schema detailing hidden endpoints and parameters."),
+        ];
+
+        for (idx, (probe_path, title, premise)) in sensitive_probes.iter().enumerate() {
+            hypotheses.push(SecurityHypothesis {
+                id: format!("hyp-sens-{}", idx + 1),
+                category: "Sensitive Information Disclosure".to_string(),
+                title: format!("{} on {}", title, probe_path),
+                target_url: format!("{}{}", base_url.trim_end_matches('/'), probe_path),
+                method: "GET".to_string(),
+                premise: premise.to_string(),
+                test_action: format!("Send GET request to {} and inspect status code and body for signature keywords.", probe_path),
+                expected_secure_behavior: "HTTP 404 Not Found or HTTP 403 Forbidden.".to_string(),
+                potential_impact: "Critical exposure of internal credentials or system architecture.".to_string(),
+            });
+        }
+
+        // Clickjacking / Frame Protection Audit on main URL
+        hypotheses.push(SecurityHypothesis {
+            id: "hyp-clickjack-1".to_string(),
+            category: "Missing Security Headers (Clickjacking)".to_string(),
+            title: "Missing X-Frame-Options Header Verification".to_string(),
+            target_url: base_url.trim_end_matches('/').to_string(),
+            method: "GET".to_string(),
+            premise: "Web application interfaces rendered without X-Frame-Options or Content-Security-Policy frame-ancestors can be embedded in malicious iframes.".to_string(),
+            test_action: "Inspect HTTP response headers of root landing page for framing restrictions.".to_string(),
+            expected_secure_behavior: "X-Frame-Options: DENY/SAMEORIGIN or CSP frame-ancestors 'self' header present.".to_string(),
+            potential_impact: "UI redressing / clickjacking leading to unauthorized user actions.".to_string(),
+        });
+
         hypotheses
     }
 }
+

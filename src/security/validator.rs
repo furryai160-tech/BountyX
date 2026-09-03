@@ -52,9 +52,26 @@ impl FindingValidator {
         } else if cat_lower.contains("admin") || cat_lower.contains("authentication") {
             // 200 OK on admin path without credentials
             initial_response.status == 200
+        } else if cat_lower.contains("sensitive") || cat_lower.contains("file") || cat_lower.contains("exposure") {
+            // Check for exposed git repository, environment file, or openapi docs
+            if hypothesis.target_url.ends_with("/.git/HEAD") {
+                initial_response.status == 200 && initial_response.body.contains("ref: refs/")
+            } else if hypothesis.target_url.ends_with("/.env") {
+                initial_response.status == 200 && (initial_response.body.contains("DB_") || initial_response.body.contains("SECRET") || initial_response.body.contains("KEY="))
+            } else if hypothesis.target_url.ends_with("/swagger.json") || hypothesis.target_url.ends_with("/openapi.json") {
+                initial_response.status == 200 && (initial_response.body.contains("\"swagger\"") || initial_response.body.contains("\"openapi\""))
+            } else {
+                false
+            }
+        } else if cat_lower.contains("header") || cat_lower.contains("clickjacking") {
+            // Missing X-Frame-Options and Frame-Ancestors CSP
+            initial_response.status == 200 
+                && initial_response.headers.get("x-frame-options").is_none()
+                && !initial_response.headers.get("content-security-policy").map(|v| v.contains("frame-ancestors")).unwrap_or(false)
         } else {
             false
         };
+
 
         if !is_anomaly {
             return None;
