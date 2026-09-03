@@ -20,6 +20,10 @@ pub enum BountyScopeError {
     #[error("Scope validation blocked target: '{target}'. Reason: {reason}")]
     ScopeViolation { target: String, reason: String },
 
+    #[error("Scope policy violation: {0}")]
+    Scope(String),
+
+
     #[error("External process '{binary}' failed with code {code:?}: {stderr}")]
     ProcessExecution {
         binary: String,

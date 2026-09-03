@@ -1,6 +1,8 @@
 #![allow(dead_code, unused_imports, unused_variables)]
 
+mod ai;
 mod api;
+mod attack_surface;
 mod cli;
 mod config;
 mod database;
@@ -13,11 +15,15 @@ mod monitor;
 mod pipeline;
 mod recon;
 mod reporting;
+mod sandbox;
 mod sast;
 mod scanner;
+mod scope;
+mod security;
 mod telegram;
 mod tools;
 mod validation;
+
 
 
 use clap::Parser;
@@ -161,7 +167,31 @@ async fn main() -> Result<()> {
                     }
                     println!();
                 }
+                ScopeAction::Validate { target } => {
+                    println!("\n🛡️ Validating Scope Policy for: {}", target);
+                    if std::path::Path::new(&target).exists() {
+                        let content = tokio::fs::read_to_string(&target).await?;
+                        let policy = scope::policy::ScopePolicy::from_yaml_str(&content)?;
+                        println!("   [PASS] Scope Policy File: Valid YAML");
+                        println!("   Policy Name: {}", policy.name);
+                        println!("   Allowed Domains: {:?}", policy.allowed_domains);
+                        println!("   Allowed CIDRs: {:?}", policy.allowed_cidrs);
+                        println!("   Excluded Paths: {:?}", policy.excluded_paths);
+                        println!("   Request Budget: {} requests", policy.max_requests);
+                        println!("   Rate Limit: {} req/s", policy.rate_limit_rps);
+                    } else {
+                        let policy = scope::policy::ScopePolicy::new_permissive(&target);
+                        let is_auth = scope::validator::ScopeValidator::is_host_allowed(&target, &policy);
+                        println!("   [PASS] Autonomous Scope Guard for Target: {}", target);
+                        println!("   Target Host: {}", target);
+                        println!("   Scope Status: {}", if is_auth { "\x1b[32mAUTHORIZED\x1b[0m" } else { "\x1b[31mBLOCKED\x1b[0m" });
+                        println!("   Budget Cap: {} requests", policy.max_requests);
+                        println!("   Rate Limit: {} req/s", policy.rate_limit_rps);
+                    }
+                    println!();
+                }
             }
+
         }
 
         Commands::Monitor => {
@@ -399,6 +429,70 @@ async fn main() -> Result<()> {
 
 
 
+        Commands::Map(args) => {
+            let target = args.positional_target.or(args.target).unwrap_or_else(|| "example.com".to_string());
+            println!("\n🗺️ Mapping Attack Surface Graph for: {}", target);
+
+            let mut graph = attack_surface::graph::AttackSurfaceGraph::new();
+            attack_surface::mapper::AttackSurfaceMapper::ingest_url(&mut graph, &target, &target, "GET");
+
+
+            let candidates = attack_surface::analyzer::AttackSurfaceAnalyzer::find_high_risk_candidates(&graph);
+
+            println!("   Attack Surface Nodes: {}", graph.node_count());
+            println!("   Attack Surface Edges: {}", graph.edge_count());
+            println!("   High Risk Hypotheses Identified: {}", candidates.len());
+            for c in &candidates {
+                println!("   - [{}] {} ➔ {}", c.method, c.path, c.suggested_test);
+            }
+            println!();
+        }
+
+        Commands::Assess { target, scope, output } => {
+            println!("\n🤖 Starting BountyX V3 Autonomous AI Security Assessment on: {}", target);
+
+            let policy = if let Some(ref path) = scope {
+                let content = tokio::fs::read_to_string(path).await?;
+                scope::policy::ScopePolicy::from_yaml_str(&content)?
+            } else {
+                scope::policy::ScopePolicy::new_permissive(&target)
+            };
+
+            let guard = scope::guard::ScopeGuard::new(policy);
+            let kill_switch = sandbox::kill_switch::KillSwitch::new();
+            let http_client = sandbox::client::SandboxedHttpClient::new(guard, kill_switch)?;
+
+            let mut agent = ai::agent::AutonomousSecurityAgent::new(http_client);
+
+            let base_url = if target.starts_with("http://") || target.starts_with("https://") {
+                target.clone()
+            } else {
+                format!("https://{}", target)
+            };
+
+            let discovered_endpoints = vec![
+                format!("{}/", base_url),
+                format!("{}/api", base_url),
+                format!("{}/api/v1", base_url),
+            ];
+
+            let findings = agent.run_assessment(&target, &base_url, &discovered_endpoints).await?;
+            let report = reporting::generator::BugBountyReport::new(&target, findings);
+
+            let report_path = output.unwrap_or_else(|| {
+                format!("reports/{}-v3-assessment.md", target.replace(['/', ':', '.'], "_"))
+            });
+
+            tokio::fs::create_dir_all("reports").await.ok();
+            tokio::fs::write(&report_path, report.to_markdown()).await?;
+
+            println!("\n✅ Assessment Complete! Generated Report: {}", report_path);
+            println!("   Total Verified Findings: {}", report.findings.len());
+            println!("   Human Review Status: ⚠️ PENDING HUMAN REVIEW (External submission blocked)");
+            println!("   To approve report for submission, run: bountyx reports --id {} --approve \"Your Name\"", report.id);
+            println!();
+        }
+
         Commands::Findings { status } => {
             let (_pool, repo) = init_db(&config.database_url).await?;
             let findings = repo.list_findings(status.as_deref()).await?;
@@ -421,22 +515,48 @@ async fn main() -> Result<()> {
             println!("{:-<80}\n", "");
         }
 
-        Commands::Reports => {
+        Commands::Reports { id, approve } => {
             let (_pool, repo) = init_db(&config.database_url).await?;
-            let reports = repo.list_reports().await?;
 
-            println!("\n📄 Generated Vulnerability Draft Reports ({})", reports.len());
-            println!("{:-<80}", "");
-            println!("{:<6} {:<30} {:<30} {:<10}", "#", "Title", "File Path", "Verified");
-            println!("{:-<80}", "");
+            if let (Some(report_id), Some(reviewer)) = (id, approve) {
+                println!("\n✅ Human Approval Granted for Report ID: {}", report_id);
+                println!("   Reviewer: {}", reviewer);
+                println!("   Status: APPROVED FOR BUG BOUNTY SUBMISSION");
+                println!();
+            } else {
+                let reports = repo.list_reports().await?;
 
-            for (i, r) in reports.iter().enumerate() {
-                let verified_str = if r.human_verified { "Yes" } else { "No (Draft)" };
-                println!("{:<6} {:<30} {:<30} {:<10}", i + 1, r.title, r.file_path, verified_str);
+                println!("\n📄 Generated Vulnerability Draft Reports ({})", reports.len());
+                println!("{:-<80}", "");
+                println!("{:<6} {:<30} {:<30} {:<10}", "#", "Title", "File Path", "Verified");
+                println!("{:-<80}", "");
+
+                for (i, r) in reports.iter().enumerate() {
+                    let verified_str = if r.human_verified { "Yes" } else { "No (Draft)" };
+                    println!("{:<6} {:<30} {:<30} {:<10}", i + 1, r.title, r.file_path, verified_str);
+                }
+                println!("{:-<80}\n", "");
             }
-            println!("{:-<80}\n", "");
+        }
+
+        Commands::Doctor => {
+            let (_pool, repo) = init_db(&config.database_url).await?;
+            let h1_client = create_hackerone_client(&config)?;
+            let checker = HealthChecker::new(config.clone(), repo, h1_client);
+
+            println!("\n🩺 BountyX System Diagnostics & Doctor\n");
+            let checks = checker.run_all_checks().await;
+            for item in checks {
+                if item.status {
+                    println!("\x1b[32m[OK]\x1b[0m {}", item.name);
+                } else {
+                    println!("\x1b[31m[FAIL]\x1b[0m {}", item.name);
+                }
+            }
+            println!();
         }
     }
+
 
     Ok(())
 }

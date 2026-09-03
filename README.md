@@ -1,33 +1,36 @@
-# 🛡️ BountyScope (BountyX)
-### Autonomous Rust Security Automation & Bug Bounty Orchestration Engine
+# 🛡️ BountyX V3 — Autonomous AI Security Research Platform
+### Autonomous AI Security Research, Attack Surface Mapping & Bug Bounty Orchestration Engine
 
 <p align="center">
+  <img src="https://img.shields.io/badge/Version-3.0.0--Enterprise-blue.svg?style=for-the-badge" alt="V3.0 Enterprise">
   <img src="https://img.shields.io/badge/Language-Rust%202021-orange.svg?style=for-the-badge&logo=rust" alt="Rust 2021">
-  <img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="License MIT">
-  <img src="https://img.shields.io/badge/Tools_Arsenal-19_Engines-green.svg?style=for-the-badge" alt="19 Tools Arsenal">
-  <img src="https://img.shields.io/badge/Cloud-Railway_%7C_Docker_%7C_Vercel-purple.svg?style=for-the-badge" alt="Cloud Ready">
-  <img src="https://img.shields.io/badge/UI-Cyber_SOC_Dashboard-cyan.svg?style=for-the-badge" alt="Cyber SOC Dashboard">
-  <img src="https://img.shields.io/badge/Community-Open_Source-brightgreen.svg?style=for-the-badge" alt="Open Source">
+  <img src="https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge" alt="License MIT">
+  <img src="https://img.shields.io/badge/AI_Agent-Reasoning_%26_Planning-purple.svg?style=for-the-badge" alt="AI Reasoning">
+  <img src="https://img.shields.io/badge/Scope_Guard-Non--Bypassable-red.svg?style=for-the-badge" alt="Scope Guard Safe">
+  <img src="https://img.shields.io/badge/Platform-Railway_%7C_Vercel_%7C_Docker-cyan.svg?style=for-the-badge" alt="Cloud Ready">
 </p>
 
 <p align="center">
-  <b>BountyScope</b> is an open-source, high-performance security automation and reconnaissance orchestration engine written in <b>Rust</b>. Designed for authorized security research, continuous asset discovery, and professional bug bounty workflows with <b>zero unauthorized probing</b>.
+  <b>BountyX V3</b> is an open-source, production-grade <b>Autonomous AI Security Research Platform</b> written in <b>Rust</b>. Designed to act as an autonomous security researcher that understands scope rules, maps attack surfaces into structural graph memory, formulates evidence-based hypotheses, executes sandboxed tests, and eliminates false positives with zero unauthorized probing.
 </p>
 
 ---
 
-## 🌟 Why BountyScope?
+## 🌟 The V3 Paradigm Shift: AI-Assisted Security Research
 
-Most bug bounty automation setups are fragile collections of bash scripts that lack state persistence, duplicate network requests, and easily run out of scope. 
+BountyX V3 is neither a simple vulnerability scanner nor a generic chatbot. It implements a rigorous, hypothesis-driven scientific testing cycle:
 
-**BountyScope replaces shell scripts with an enterprise-grade Rust core:**
-- 🦀 **Async Concurrency:** Powered by `Tokio` and a worker queue supporting configurable concurrent jobs with graceful shutdown.
-- 🛡️ **Strict Scope Guard:** Every target, IP, and URL must validate against authorized wildcard and CIDR scope rules before active execution.
-- 🗄️ **Persistent SQLite WAL Storage:** Stores programs, assets, discovered endpoints, HTTP hosts, findings, and forensic audit logs.
-- 🔄 **Continuous Platform Sync:** Automatically synchronizes scope changes from platforms like HackerOne every 5 minutes and flags diffs.
-- 🧩 **19-Tool Automated Pipeline:** Seamlessly orchestrates leading open-source security tools alongside native Rust analyzers.
-- 📊 **Cyber SOC Web Dashboard:** Dark Glassmorphism interface deployable to **Vercel** with real-time telemetry and POC evidence viewer.
-- 🤖 **Interactive Telegram Bot:** Secure phone-authenticated bot with interactive control keyboards and instant vulnerability alerts.
+```text
+OBSERVE ➔ UNDERSTAND ➔ HYPOTHESIZE ➔ PLAN ➔ SAFELY TEST ➔ ANALYZE ➔ VALIDATE ➔ UPDATE KNOWLEDGE
+```
+
+1. **🛡️ Non-Bypassable Scope Guard:** Hard-coded security boundary checking wildcard domains, CIDRs, forbidden paths, and request quotas before every network probe.
+2. **🗺️ Attack Surface Graph Memory:** Converts recon data into a directed graph tracking hosts, endpoints, parameters, authentication boundaries, and object relationships.
+3. **🧠 3-Layer AI Agent Memory:** Short-Term Test Memory, Assessment Memory, and OWASP Security Knowledge Base.
+4. **🔬 Multi-Stage Finding Validator:** Every detection undergoes reproduction probing and differential analysis before being confirmed.
+5. **🔏 Secret Redaction & Evidence Bundles:** Automatically redacts tokens, credentials, and cookies from evidence captures.
+6. **⚖️ Human Approval Gate:** Reports cannot be submitted externally without explicit human review and approval.
+
 
 ---
 
@@ -101,20 +104,25 @@ cp .env.example .env
 docker compose up -d
 ```
 
-### 2. Local Build (Debian / Kali Linux)
+### 2. Local CLI Commands
 ```bash
-# Install system dependencies
-sudo apt-get update && sudo apt-get install -y libsqlite3-dev pkg-config build-essential
+# Run system doctor and tool checks
+cargo run -- doctor
 
-# Check environment health
-cargo run -- health
+# Validate target or custom scope policy
+cargo run -- scope validate example.com
 
-# Start continuous monitoring engine
-cargo run -- monitor
+# Map attack surface graph
+cargo run -- map example.com
 
-# Or execute a single targeted scan
-cargo run -- scan example.com
+# Run autonomous AI security research assessment
+cargo run -- assess example.com
+
+# Review findings & approve report for submission
+cargo run -- findings
+cargo run -- reports --id rep-12345 --approve "Yasseen Sabry Elawamy"
 ```
+
 
 ### 3. Deploy Backend to Railway
 The repository includes a ready `Dockerfile` and `railway.toml`. Simply import this repository into [Railway.app](https://railway.app) and configure your environment variables.

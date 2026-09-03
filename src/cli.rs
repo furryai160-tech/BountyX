@@ -39,6 +39,21 @@ pub enum Commands {
     /// Trigger manual targeted scanner on an authorized in-scope target
     Scan(TargetArgs),
 
+    /// Map attack surface graph for an authorized target
+    Map(TargetArgs),
+
+    /// Execute Autonomous AI Security Research Assessment (Hypothesis -> Test -> Validate)
+    Assess {
+        /// Target domain or root URL
+        target: String,
+        /// Optional path to YAML or JSON scope policy file
+        #[arg(short, long)]
+        scope: Option<String>,
+        /// Output path for generated report
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+
     /// List and inspect recorded security findings
     Findings {
         /// Optional status filter (NEW, POTENTIAL, REQUIRES_REVIEW, CONFIRMED_BY_USER, REJECTED)
@@ -46,8 +61,18 @@ pub enum Commands {
         status: Option<String>,
     },
 
-    /// List generated draft markdown reports
-    Reports,
+    /// Manage and review generated bug bounty assessment reports
+    Reports {
+        /// Optional report ID to review or approve
+        #[arg(short, long)]
+        id: Option<String>,
+        /// Human reviewer name for approval
+        #[arg(short, long)]
+        approve: Option<String>,
+    },
+
+    /// Run system diagnostics, tool availability checks, and environment validation
+    Doctor,
 }
 
 #[derive(Subcommand, Debug)]
@@ -57,7 +82,14 @@ pub enum ScopeAction {
 
     /// Display diff between current and previous scope snapshots
     Diff,
+
+    /// Validate a target domain, URL, or scope policy file
+    Validate {
+        /// Target domain, URL, or path to scope.yaml
+        target: String,
+    },
 }
+
 
 #[derive(Args, Debug)]
 pub struct TargetArgs {

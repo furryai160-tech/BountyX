@@ -41,14 +41,18 @@ graph TD
 |---|---|---|
 | **Core CLI & Config** | `src/cli.rs`, `src/config.rs` | Clap command-line parser, `.env` management, and runtime environment validation. |
 | **Database & Persistence** | `src/database/` | High-concurrency SQLite database with WAL (Write-Ahead Logging), connection pooling, migrations, and repository queries. |
-| **Scope Guard** | `src/validation/` | Fast wildcard, exact match, and IP/CIDR scope validator. Ensures **zero unauthorized probing**. |
-| **HackerOne Adapter** | `src/hackerone/` | REST API client for HackerOne program scopes, rate-limit backoff handler, and differential change detection engine. |
-| **Pipeline Engine** | `src/pipeline/` | Queue management (`ReconQueue`), asynchronous worker pool (`PipelineWorker`), and job state transitions. |
+| **Scope Guard (V3)** | `src/scope/` | Non-bypassable policy gatekeeper checking domains, wildcards, CIDRs, forbidden paths, and request quotas. |
+| **Attack Surface Graph (V3)** | `src/attack_surface/` | Petgraph-backed structural memory tracking hosts, endpoints, parameters, and object boundaries. |
+| **Autonomous AI Agent (V3)** | `src/ai/` | Hypothesis-driven researcher executing Observe ➔ Hypothesize ➔ Test ➔ Validate loop with 3-layer memory. |
+| **Finding Validator & Evidence (V3)** | `src/security/` | Multi-stage reproduction engine, false-positive elimination, and redacted evidence bundles. |
+| **Sandboxed Client & Kill Switch (V3)** | `src/sandbox/` | Rate-limited, budget-capped safe HTTP client with emergency kill switch. |
+| **Report Generator & Approval (V3)** | `src/reporting/` | Bug bounty Markdown/JSON report compiler with mandatory Human Approval Gate. |
 | **Tool Adapters** | `src/tools/` | Generic `SecurityTool` trait implementations wrapping external binaries with timeouts and stderr handling. |
 | **Specialized Scanners** | `src/scanner/` | Pure Rust scanners: Takeover Radar, CORS misconfiguration, 403 header bypass, open redirect probes, and Nuclei wrapper. |
 | **Reconnaissance Engine** | `src/recon/` | Subfinder, HTTPX, Katana, GAU, and regex-powered JS Miner. |
 | **REST API Server** | `src/api/` | Axum HTTP server exposing JSON endpoints with CORS support for web dashboard integration. |
 | **Telegram Service** | `src/telegram/` | Async polling bot with phone number verification, interactive control keyboard, and alerting broadcaster. |
+
 
 ---
 
