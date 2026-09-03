@@ -563,10 +563,17 @@ async fn main() -> Result<()> {
                 tokio::fs::create_dir_all("reports").await.ok();
                 tokio::fs::write(&report_path, report.to_markdown()).await?;
 
+                if !report.findings.is_empty() {
+                    let notifier = TelegramNotifier::new(&config, Some(repo.clone()));
+                    notifier.notify_v3_report(&report).await;
+                    println!("   📱 Sent Telegram Alert with [🚀 Submit Report] inline button!");
+                }
+
                 println!("\n✅ Assessment Complete! Generated Report: {}", report_path);
                 println!("   Total Verified Findings: {}", report.findings.len());
                 println!("   Human Review Status: ⚠️ PENDING HUMAN REVIEW (External submission blocked)");
                 println!("   To approve report for submission, run: bountyx reports --id {} --approve \"Your Name\"\n", report.id);
+
 
                 if !continuous || target.is_some() {
                     break;

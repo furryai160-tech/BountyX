@@ -20,6 +20,22 @@ struct TelegramUpdateResponse {
 struct TelegramUpdate {
     pub update_id: i64,
     pub message: Option<TelegramMessage>,
+    pub callback_query: Option<TelegramCallbackQuery>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TelegramCallbackQuery {
+    pub id: String,
+    pub from: TelegramUser,
+    pub message: Option<TelegramMessage>,
+    pub data: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TelegramUser {
+    pub id: i64,
+    pub first_name: String,
+    pub username: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -29,6 +45,7 @@ struct TelegramMessage {
     pub text: Option<String>,
     pub contact: Option<TelegramContact>,
 }
+
 
 #[derive(Debug, Deserialize)]
 struct TelegramChat {
@@ -149,11 +166,16 @@ impl TelegramBot {
                                     if let Some(msg) = update.message {
                                         self.process_message(msg).await;
                                     }
+
+                                    if let Some(cb) = update.callback_query {
+                                        self.process_callback_query(cb).await;
+                                    }
                                 }
                             }
                         }
                     }
                 }
+
                 Err(e) => {
                     debug!("Telegram polling request failed: {}. Retrying...", e);
                     tokio::time::sleep(Duration::from_secs(3)).await;
@@ -269,7 +291,51 @@ impl TelegramBot {
         }
     }
 
+    async fn process_callback_query(&self, cb: TelegramCallbackQuery) {
+        let chat_id = cb.message.as_ref().map(|m| m.chat.id).unwrap_or(cb.from.id);
+        let data = cb.data.unwrap_or_default();
+
+        let answer_url = format!("https://api.telegram.org/bot{}/answerCallbackQuery", self.bot_token);
+        let mut alert_text = "تم استلام طلبك".to_string();
+
+        if data.starts_with("approve:") {
+            let report_id = data.trim_start_matches("approve:");
+            alert_text = format!("✅ تم اعتماد وإرسال التقرير [{}]!", report_id);
+
+            let _ = self.repository.record_audit_event(
+                "REPORT_APPROVAL",
+                report_id,
+                "APPROVED",
+                &format!("Report approved and submitted via Telegram button by {}", cb.from.first_name),
+                Some("human_gate"),
+                None,
+            ).await;
+
+            let reply_msg = format!(
+                "🚀 <b>تم اعتماد وإرسال التقرير بنجاح!</b>\n\n\
+                🆔 <b>معرف التقرير:</b> <code>{}</code>\n\
+                👤 <b>المعتمد:</b> <b>Yasseen Sabry Elawamy</b> ({})\n\
+                ⚡ <b>الحالة:</b> 🟢 تم اعتماده للتقديم إلى منصة Bug Bounty بنجاح!",
+                report_id,
+                cb.from.first_name
+            );
+            self.send_reply(chat_id, &reply_msg, false).await;
+        } else if data.starts_with("reject:") {
+            let report_id = data.trim_start_matches("reject:");
+            alert_text = format!("❌ تم رفض التقرير [{}]", report_id);
+            let reply_msg = format!("❌ <b>تم استبعاد التقرير</b> <code>{}</code> ولن يتم إرساله.", report_id);
+            self.send_reply(chat_id, &reply_msg, false).await;
+        }
+
+        let _ = self.client.post(&answer_url).json(&serde_json::json!({
+            "callback_query_id": cb.id,
+            "text": alert_text,
+            "show_alert": true
+        })).send().await;
+    }
+
     fn split_message(text: &str, max_len: usize) -> Vec<String> {
+
         if text.len() <= max_len {
             return vec![text.to_string()];
         }

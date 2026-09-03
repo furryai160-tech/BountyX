@@ -98,9 +98,122 @@ impl TelegramNotifier {
         Ok(())
     }
 
+    pub async fn send_message_with_inline_keyboard(&self, text: &str, inline_keyboard: serde_json::Value) -> Result<()> {
+        if !self.enabled {
+            debug!("Telegram not configured, skipping notification: {}", text);
+            return Ok(());
+        }
+
+        let mut target_chats = std::collections::HashSet::new();
+        if self.chat_id != 0 {
+            target_chats.insert(self.chat_id);
+        }
+
+        if let Some(ref repo) = self.repository {
+            if let Ok(authorized) = repo.list_authorized_telegram_chats().await {
+                for cid in authorized {
+                    target_chats.insert(cid);
+                }
+            }
+        }
+
+        if target_chats.is_empty() {
+            debug!("No authorized Telegram chat IDs found yet for notification: {}", text);
+            return Ok(());
+        }
+
+        let url = format!(
+            "https://api.telegram.org/bot{}/sendMessage",
+            self.bot_token
+        );
+
+        for target_chat in target_chats {
+            let payload = json!({
+                "chat_id": target_chat,
+                "text": text,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": true,
+                "reply_markup": inline_keyboard
+            });
+
+            match self.client.post(&url).json(&payload).send().await {
+                Ok(resp) => {
+                    if resp.status().is_success() {
+                        debug!("Telegram inline notification sent successfully to chat {}", target_chat);
+                        if let Some(ref repo) = self.repository {
+                            let _ = repo.log_notification("TELEGRAM_V3_REPORT", text).await;
+                        }
+                    } else {
+                        let err_body = resp.text().await.unwrap_or_default();
+                        warn!("Telegram sendMessage returned non-success for chat {}: {}", target_chat, err_body);
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to send Telegram message to chat {}: {}", target_chat, e);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub async fn notify_v3_report(&self, report: &crate::reporting::generator::BugBountyReport) {
+        let max_sev = report.findings.iter().map(|f| &f.risk.severity).max().unwrap_or(&crate::security::risk::Severity::Medium);
+        let sev_str = format!("{:?}", max_sev).to_uppercase();
+        let sev_badge = match sev_str.as_str() {
+            "CRITICAL" => "🚨 حرج (CRITICAL)",
+            "HIGH" => "🟠 عالي (HIGH)",
+            "MEDIUM" => "🟡 متوسط (MEDIUM)",
+            _ => "ℹ️ منخفض / معلوماتي",
+        };
+
+        let mut findings_summary = String::new();
+        for (i, f) in report.findings.iter().enumerate() {
+            findings_summary.push_str(&format!("{}. <b>{}</b> [<code>{}</code>]\n", i + 1, f.title, f.risk.severity));
+            if !f.evidence.reproduction_curl.is_empty() {
+                findings_summary.push_str(&format!("<code>{}</code>\n\n", f.evidence.reproduction_curl));
+            }
+        }
+
+        let msg = format!(
+            "🚨 <b>اكتشاف ثغرة أمنية جديدة عبر BountyX V3!</b>\n\n\
+            🎯 <b>الهدف:</b> <code>{}</code>\n\
+            ⚠️ <b>درجة الخطورة:</b> <b>{}</b>\n\
+            📊 <b>عدد الثغرات المؤكدة:</b> {}\n\n\
+            🔬 <b>تفاصيل الثغرة والأدلة (PoC):</b>\n{}\
+            🛡️ <b>حالة المراجعة:</b> ⚠️ التقرير مكتوب وجاهز، اضغط الزر أدناه لاعتماده وإرساله فوراً.\n\
+            🆔 <b>معرف التقرير:</b> <code>{}</code>",
+            report.target_domain,
+            sev_badge,
+            report.findings.len(),
+            findings_summary,
+            report.id
+        );
+
+
+        let inline_keyboard = serde_json::json!({
+            "inline_keyboard": [
+                [
+                    {
+                        "text": "🚀 إرسال واعتماد التقرير (Submit Report)",
+                        "callback_data": format!("approve:{}", report.id)
+                    }
+                ],
+                [
+                    {
+                        "text": "❌ استبعاد ورفض",
+                        "callback_data": format!("reject:{}", report.id)
+                    }
+                ]
+            ]
+        });
+
+        let _ = self.send_message_with_inline_keyboard(&msg, inline_keyboard).await;
+    }
 
     pub async fn notify_startup(&self, programs: usize, assets: usize, workers: usize) {
         let msg = format!(
+
             "🟢 <b>تم تشغيل BountyScope بنجاح</b>\n\n\
             💻 <b>نظام التشغيل:</b> Kali Linux\n\
             ⚡ <b>المهام المتزامنة:</b> {} عمال (Workers)\n\n\
