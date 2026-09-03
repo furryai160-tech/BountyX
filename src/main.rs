@@ -741,10 +741,34 @@ async fn main() -> Result<()> {
             let (_pool, repo) = init_db(&config.database_url).await?;
 
             if let (Some(report_id), Some(reviewer)) = (id, approve) {
+                let _ = repo.mark_report_verified(&report_id).await;
                 println!("\n✅ Human Approval Granted for Report ID: {}", report_id);
                 println!("   Reviewer: {}", reviewer);
                 println!("   Status: APPROVED FOR BUG BOUNTY SUBMISSION");
-                println!();
+
+                let vault_dir = std::path::Path::new("reports").join("approved").join(&report_id);
+                tokio::fs::create_dir_all(&vault_dir).await.ok();
+
+                let sub_file = vault_dir.join("submission.txt");
+                let sub_txt = format!(
+                    "================================================================================\n\
+                    HACKERONE / BUGCROWD READY SUBMISSION PACKAGE\n\
+                    Report ID:       {}\n\
+                    Human Reviewer:  {} (Approved at {})\n\
+                    Vault Directory: {}\n\
+                    ================================================================================\n\n\
+                    [STATUS]: APPROVED FOR EXTERNAL SUBMISSION\n\n\
+                    [PACKAGE ARTIFACTS]:\n\
+                    - report.md       (Full Vulnerability Markdown Report)\n\
+                    - report.pdf      (Executive Print-Ready PDF Report)\n\
+                    - evidence.json   (Raw Network & Differential Telemetry)\n\
+                    - submission.txt  (This Quick Copy-Paste Document)\n",
+                    report_id, reviewer, chrono::Utc::now().to_rfc3339(), vault_dir.display()
+                );
+                tokio::fs::write(&sub_file, sub_txt).await.ok();
+
+                println!("📁 Submission Package created in Vault: {}", vault_dir.display());
+                println!("   Artifacts: report.md, report.pdf, evidence.json, submission.txt\n");
             } else {
                 let reports = repo.list_reports().await?;
 

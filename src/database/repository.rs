@@ -180,6 +180,49 @@ impl Repository {
         Ok(rows.into_iter().map(|r| r.get::<String, _>("identifier")).collect())
     }
 
+    /// Verifies if a given hostname or target is strictly in-scope of an enrolled program.
+    /// Returns Some(program_id) if authorized, or None if out-of-scope.
+    pub async fn check_target_in_scope(&self, target_host: &str) -> Result<Option<String>> {
+        let clean_host = target_host
+            .trim_start_matches("https://")
+            .trim_start_matches("http://")
+            .split('/')
+            .next()
+            .unwrap_or(target_host)
+            .split(':')
+            .next()
+            .unwrap_or(target_host)
+            .to_lowercase();
+
+        // 1. Allow local security lab
+        if clean_host == "127.0.0.1" || clean_host == "localhost" {
+            return Ok(Some("local-security-lab".to_string()));
+        }
+
+        // 2. Direct match or wildcard match (*.example.com)
+        let row = sqlx::query(
+            r#"
+            SELECT program_id, identifier
+            FROM assets
+            WHERE in_scope = 1 AND (
+                LOWER(identifier) = ?1
+                OR (identifier LIKE '*.%' AND ?1 LIKE '%' || SUBSTR(identifier, 3))
+            )
+            LIMIT 1
+            "#
+        )
+        .bind(&clean_host)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(r) = row {
+            let prog: String = r.get("program_id");
+            return Ok(Some(prog));
+        }
+
+        Ok(None)
+    }
+
     pub async fn update_asset_last_scanned(&self, identifier: &str) -> Result<()> {
         let now = Utc::now();
         sqlx::query(
@@ -804,6 +847,24 @@ impl Repository {
         .await?;
 
         Ok(reports)
+    }
+
+    pub async fn mark_report_verified(&self, report_id: &str) -> Result<()> {
+        let now = Utc::now();
+        sqlx::query(
+            r#"
+            UPDATE reports
+            SET human_verified = 1, updated_at = ?1
+            WHERE id = ?2 OR file_path LIKE ?3
+            "#
+        )
+        .bind(now)
+        .bind(report_id)
+        .bind(format!("%{}%", report_id))
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
     }
 
     // -------------------------------------------------------------------------

@@ -44,15 +44,16 @@ impl TelegramCommandHandler {
         // Match Full Arabic Button Labels
         match trimmed_text {
             "📊 حالة النظام" | "حالة النظام" => return self.handle_status().await,
+            "📊 إحصائيات المنصة" | "إحصائيات" | "احصائيات" => return self.handle_stats().await,
             "📋 عرض الثغرات" | "عرض الثغرات" | "الثغرات" => return self.handle_findings().await,
             "📁 البرامج" | "البرامج" => return self.handle_programs().await,
             "📄 أحدث التقارير" | "أحدث التقارير" | "التقارير" => return self.handle_reports().await,
             "🩺 فحص الأدوات" | "فحص الأدوات" | "فحص النظام" => return self.handle_health().await,
             "⏳ قائمة الانتظار" | "قائمة الانتظار" | "طابور الفحص" => return self.handle_queue().await,
             "🎯 الأصول المصرح بها" | "الأصول المصرح بها" | "النطاق" => return self.handle_scope().await,
-            "🚀 فحص هدف" | "فحص هدف" => return Ok("🎯 <b>لفحص هدف محدد فوراً، أرسل الأمر مع اسم النطاق كالتالي:</b>\n<code>/scan example.com</code>\n\nأو لفحص برنامج كامل:\n<code>/scan_program shopify</code>".to_string()),
-            "⏸️ إيقاف مؤقت" | "إيقاف مؤقت" | "ايقاف مؤقت" => return self.handle_stop_cmd(&[]).await,
-            "▶️ استئناف" | "استئناف" | "تشغيل" => return self.handle_start_cmd(&[]).await,
+            "🚀 فحص هدف" | "فحص هدف" => return Ok("🎯 <b>لفحص هدف محدد فوراً، أرسل الأمر مع اسم النطاق المصرح به:</b>\n<code>/scan example.com</code>\n\n📌 <i>حارس النطاق (Scope Guard) سيفحص إذا كان الهدف مصرحاً به قبل البدء.</i>".to_string()),
+            "⏸️ إيقاف مؤقت" | "إيقاف مؤقت" | "ايقاف مؤقت" => return self.handle_pause().await,
+            "▶️ استئناف" | "استئناف" | "تشغيل" => return self.handle_resume().await,
             "❓ المساعدة والأوامر" | "المساعدة والأوامر" | "مساعدة" => return Ok(self.render_help()),
             _ => {}
         }
@@ -62,6 +63,9 @@ impl TelegramCommandHandler {
 
         match cmd.as_str() {
             "/status" => self.handle_status().await,
+            "/stats" => self.handle_stats().await,
+            "/pause" => self.handle_pause().await,
+            "/resume" => self.handle_resume().await,
             "/programs" => self.handle_programs().await,
             "/scope" => self.handle_scope().await,
             "/findings" => self.handle_findings().await,
@@ -274,23 +278,104 @@ impl TelegramCommandHandler {
         }
     }
 
+    async fn handle_pause(&self) -> Result<String> {
+        self.is_paused.store(true, Ordering::SeqCst);
+        info!("BountyScope worker queue PAUSED via Telegram command.");
+        Ok("⏸️ <b>تم إيقاف محرك الفحص مؤقتاً (Paused).</b>\n\nلن تبدأ مهام فحص جديدة حتى ترسل <code>/resume</code>.".to_string())
+    }
+
+    async fn handle_resume(&self) -> Result<String> {
+        self.is_paused.store(false, Ordering::SeqCst);
+        info!("BountyScope worker queue RESUMED via Telegram command.");
+        Ok("▶️ <b>تم استئناف محرك الفحص بنجاح (Resumed).</b>\n\nعمال الفحص جاهزون الآن لمعالجة الأهداف داخل النطاق المصرح به.".to_string())
+    }
+
+    async fn handle_stats(&self) -> Result<String> {
+        let stats = self.repository.get_stats().await?;
+        let findings = self.repository.list_findings(None).await?;
+        let approved_reports = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reports WHERE human_verified = 1")
+            .fetch_one(self.repository.pool())
+            .await
+            .unwrap_or(0);
+
+        let mut critical_count = 0;
+        let mut high_count = 0;
+        let mut medium_count = 0;
+        let mut low_count = 0;
+
+        for f in &findings {
+            match f.severity.to_uppercase().as_str() {
+                "CRITICAL" => critical_count += 1,
+                "HIGH" => high_count += 1,
+                "MEDIUM" => medium_count += 1,
+                _ => low_count += 1,
+            }
+        }
+
+        let paused = self.is_paused.load(Ordering::SeqCst);
+        let status_badge = if paused { "⏸️ متوقف مؤقتاً" } else { "🟢 نشط وجاهز" };
+
+        Ok(format!(
+            "📊 <b>إحصائيات منصة BountyX V3 الشاملة</b> 🛡️\n\n\
+            ⚡ <b>حالة المحرك:</b> {}\n\
+            📁 <b>البرامج المسجلة:</b> <b>{}</b> برنامج\n\
+            🎯 <b>الأصول المصرح بها:</b> <b>{}</b> أصل\n\n\
+            🚨 <b>توزيع الثغرات المكتشفة:</b>\n\
+            • 🚨 حرج (CRITICAL): <b>{}</b>\n\
+            • 🟠 عالي (HIGH): <b>{}</b>\n\
+            • 🟡 متوسط (MEDIUM): <b>{}</b>\n\
+            • ℹ️ منخفض/معلوماتي: <b>{}</b>\n\
+            • الإجمالي: <b>{}</b> ثغرة مسجلة\n\n\
+            📄 <b>التقارير المعتمدة في الخزنة:</b> <b>{}</b> تقرير جاهز للتقديم\n\
+            ⚡ <b>المهام المكتملة في المحرك:</b> <b>{}</b> مهمة",
+            status_badge,
+            stats.total_programs,
+            stats.total_assets,
+            critical_count,
+            high_count,
+            medium_count,
+            low_count,
+            findings.len(),
+            approved_reports,
+            stats.completed_jobs
+        ))
+    }
+
     async fn handle_scan_target(&self, args: &[&str]) -> Result<String> {
         if args.is_empty() {
-            return Ok("⚠️ <b>الاستخدام:</b> <code>/scan &lt;الهدف&gt; [اسم_البرنامج]</code>\nمثال: <code>/scan api.example.com demo</code>".to_string());
+            return Ok("⚠️ <b>الاستخدام:</b> <code>/scan &lt;الهدف&gt; [اسم_البرنامج]</code>\nمثال: <code>/scan api.example.com</code>".to_string());
         }
 
         let target = args[0];
-        let program = if args.len() > 1 { args[1] } else { "manual" };
+        let requested_program = if args.len() > 1 { Some(args[1]) } else { None };
 
+        // 1. Scope Guard Pipeline: Verify target is strictly in-scope before enqueuing
+        let matched_program = match self.repository.check_target_in_scope(target).await? {
+            Some(prog) => prog,
+            None => {
+                warn!("🛑 Scope Guard BLOCKED /scan attempt for unauthorized target: {}", target);
+                return Ok(format!(
+                    "⛔ <b>الهدف خارج النطاق المصرح به (Out of Scope)!</b>\n\n\
+                    🎯 <b>الهدف المطلوب:</b> <code>{}</code>\n\
+                    🛡️ <b>حارس النطاق (Scope Guard):</b> تم حظر طلب الفحص تلقائياً.\n\n\
+                    📌 <b>السبب:</b> هذا الأصل غير مدرج في النطاق المصرح به (In-Scope) لأي من البرامج المسجلة.\n\
+                    <i>محرك BountyX يمنع بشكل صارم فحص أي هدف خارج النطاق لضمان الحماية القانونية والأخلاقية.</i>",
+                    target
+                ));
+            }
+        };
+
+        let program = requested_program.unwrap_or(&matched_program);
         let job_id = self.repository.enqueue_recon_job(target, program).await?;
-        info!("Enqueued job '{}' via Telegram command for target '{}'", job_id, target);
+        info!("Enqueued authorized job '{}' via Telegram for target '{}' (Program: {})", job_id, target, program);
 
         Ok(format!(
-            "🚀 <b>تم إدراج الهدف في قائمة الفحص:</b>\n\n\
+            "🚀 <b>تم التحقق وإدراج الهدف في قائمة الفحص:</b>\n\n\
             🎯 <b>الهدف:</b> <code>{}</code>\n\
-            📁 <b>البرنامج:</b> <code>{}</code>\n\
+            📁 <b>البرنامج المعتمد:</b> <code>{}</code>\n\
+            🛡️ <b>حالة النطاق:</b> ✅ مصرح به رسمياً (In-Scope)\n\
             🆔 <b>رقم المهمة:</b> <code>{}</code>\n\n\
-            سيبدأ العمال في معالجة الهدف فوراً، وستصلك تنبيهات فور اكتشاف أي نتيجة أمنية.",
+            سيبدأ محرك الفحص في معالجة الهدف، وستصلك تنبيهات فور تأكيد أي ثغرة أمنية.",
             target, program, job_id
         ))
     }
